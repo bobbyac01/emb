@@ -35,6 +35,16 @@ ADXL345_SCALE_MULTIPLIER = 0.00390625    # G/LSP
 ADXL345_BW_RATE_100HZ    = 0x0A
 ADXL345_MEASURE          = 0x08 
 
+L3G4200D_ADDRESS        =    0x69
+L3G4200D_CTRL_REG1      =    0x20
+L3G4200D_CTRL_REG4      =    0x23
+L3G4200D_OUT_X_L        =    0x28
+L3G4200D_OUT_X_H        =    0x29
+L3G4200D_OUT_Y_L        =    0x2A
+L3G4200D_OUT_Y_H        =    0x2B
+L3G4200D_OUT_Z_L        =    0x2C
+L3G4200D_OUT_Z_H        =    0x2D
+
 
 class IMU(object):
 
