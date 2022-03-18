@@ -468,7 +468,7 @@ try:
         #print ("   Temp: %f C (%f F)" %(tempC,tempF))
         #print ("   Press: %f (hPa)" %(press))
         #print ("   Altitude: %f m s.l.m" %(altitude))
-        print("Accleration = %.3f" % ( numpy.sqrt(pow(adxl345.X,2)+pow(adxl345.Y,2)+pow(adxl345.Z,2)) )
+        print("Accleration = %.3f" % ( numpy.sqrt(pow(adxl345.X,2)+pow(adxl345.Y,2)+pow(adxl345.Z,2)) ))
         rollacc = adxl345.Y / adxl345.Z
         pitchacc = (-adxl345.X) / numpy.sqrt(pow(adxl345.Y,2)+pow(adxl345.Z,2))
         #print(" Rollacc = %.3f" % (rollacc) )
