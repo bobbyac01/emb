@@ -473,12 +473,13 @@ try:
         pitchacc = (-adxl345.X) / numpy.sqrt(pow(adxl345.Y,2)+pow(adxl345.Z,2))
         #print(" Rollacc = %.3f" % (rollacc) )
         #print(" Pitchacc = %.3f" % (pitchacc) )
-        pitch = (pitch + gyro.getXangle())*0.98 + pitchacc*0.02)
-        roll = (roll + gyro.getYangle())*0.98 + rollacc*0.02)
+        pitch = (pitch + gyro.getXangle())*0.98 + pitchacc*0.02
+        roll = (roll + gyro.getYangle())*0.98 + rollacc*0.02
         print(" Pitch = %.3f" % (pitch) )
         print(" Roll = %.3f" % (roll) )
         print(" Xh = %.3f" % ( magx*numpy.cos(pitch) + magz*numpy.sin(pitch) )
-        print(" Yh = %.3f" % ( magx*numpy.sin(roll)*numpy.sin(pitch) + magy*numpy.cos(roll) - magz*numpy.sin(roll)*numpy.cos(pitch)
+        print(" Yh = %.3f" % ( magx*numpy.sin(roll)*numpy.sin(pitch) + magy*numpy.cos(roll) - magz*numpy.sin(roll)*numpy.cos(pitch
+) ))
         time.sleep(1)
 
 
