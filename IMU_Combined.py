@@ -3,6 +3,7 @@
 import smbus
 import time
 from math import *
+import numpy
 
 bus = smbus.SMBus(1);            # 0 for R-Pi Rev. 1, 1 for Rev. 2
 
@@ -45,6 +46,25 @@ L3G4200D_OUT_Y_H        =    0x2B
 L3G4200D_OUT_Z_L        =    0x2C
 L3G4200D_OUT_Z_H        =    0x2D
 
+STANDARD_PRESSURE    = 1013.25 # hPa
+
+#BMP180 (Barometer) constants
+BMP180_ADDRESS            = 0x77
+
+# Calibration coefficients
+BMP180_AC1                = 0xAA
+BMP180_AC2                = 0xAC
+BMP180_AC3                = 0xAE
+BMP180_AC4                = 0xB0
+BMP180_AC5                = 0xB2
+BMP180_AC6                = 0xB4
+BMP180_B1                = 0xB6 
+BMP180_B2                = 0xB8 
+BMP180_MB                = 0xBA 
+BMP180_MC                = 0xBC 
+BMP180_MD                = 0xBE 
+
+
 
 class IMU(object):
 
@@ -81,6 +101,7 @@ class gy801(object):
         self.compass = HMC5883L()
         self.accel = ADXL345()
         self.gyro = L3G4200D()
+        self.baro = BMP180()
 
 
 class L3G4200D(IMU):
@@ -244,9 +265,9 @@ class HMC5883L(IMU):
         self.Y = None
         self.Z = None
         self.angle = None
-        self.Xoffset = 106.5
-        self.Yoffset = -469.0
-        self.Zoffset = -29.0
+        self.Xoffset = 91.5
+        self.Yoffset = -67.5
+        self.Zoffset = 54.0
         
         # Declination Angle
         self.angle_offset = ( -1 * (4 + (32/60))) / (180 / pi)
@@ -296,6 +317,109 @@ class HMC5883L(IMU):
         self.angle = bearing + self.angle_offset
         return self.angle
 
+class BMP180(IMU):
+    
+    ADDRESS = BMP180_ADDRESS
+    
+    def __init__(self) :
+        #Class Properties
+        self.tempC = None
+        self.tempF = None
+        self.press = None
+        self.altitude = None
+        
+        self.oversampling = 0        # 0,1,2,3
+        
+        self._read_calibratio_params()
+        
+    # read calibration data
+    def _read_calibratio_params(self) :
+        self.ac1_val = self.read_word_2c(BMP180_AC1,0)
+        self.ac2_val = self.read_word_2c(BMP180_AC2,0)
+        self.ac3_val = self.read_word_2c(BMP180_AC3,0)
+        self.ac4_val = self.read_word(BMP180_AC4,0)
+        self.ac5_val = self.read_word(BMP180_AC5,0)
+        self.ac6_val = self.read_word(BMP180_AC6,0)
+        self.b1_val = self.read_word_2c(BMP180_B1,0)
+        self.b2_val = self.read_word_2c(BMP180_B2,0)
+        self.mc_val = self.read_word_2c(BMP180_MC,0)
+        self.md_val = self.read_word_2c(BMP180_MD,0)
+
+    # read uncompensated temperature value
+    def getTempC(self) :
+        # print ("Calculating temperature...")
+        self.write_byte(0xF4, 0x??)
+        time.sleep(0.005)
+        
+        ut = self.read_word(0xF6,0)
+
+        # calculate true temperature
+        x1 = ((ut - self.ac6_val) * self.ac5_val) >> 15
+        x2 = (self.mc_val << 11) // (x1 + self.md_val)
+        # // = floor division
+        b5 = x1 + x2 
+        self.tempC = ((b5 + 8) >> 4) / 10.0
+        
+        return self.tempC
+
+    def getTempF(self) :
+        #print ("Calculating temperature (Fahrenheit)...")
+        self.tempF = self.getTempC() * 1.8 + 32
+
+        return self.tempF
+
+    # read uncompensated pressure value
+    def getPress(self) :
+        # print ("Calculating temperature...")
+        self.write_byte(0xF4, 0x??)
+        time.sleep(0.005)
+        
+        ut = self.read_word(0xF6,0)
+
+        x1 = ((ut - self.ac6_val) * self.ac5_val) >> 15
+        x2 = (self.mc_val << 11) // (x1 + self.md_val)
+        b5 = x1 + x2 
+
+        #print ("Calculating pressure...")
+        self.write_byte(0xF4, 0x34 + (self.oversampling << 6))
+        time.sleep(0.04)
+
+        msb = self.read_byte(0xF6)
+        lsb = self.read_byte(0xF7)
+        xsb = self.read_byte(0xF8)
+        
+        up = ((msb << 16) + (lsb << 8) + xsb) >> (8 - self.oversampling)
+
+        # calculate true pressure
+        b6 = b5 - 4000
+        b62 = b6 * b6 >> 12
+        x1 = (self.b2_val * b62) >> 11
+        x2 = self.ac2_val * b6 >> 11
+        x3 = x1 + x2
+        b3 = (((self.ac1_val * 4 + x3) << self.oversampling) + 2) >> 2
+
+        x1 = self.ac3_val * b6 >> 13
+        x2 = (self.b1_val * b62) >> 16
+        x3 = ((x1 + x2) + 2) >> 2
+        b4 = (self.ac4_val * (x3 + 32768)) >> 15
+        b7 = (up - b3) * (50000 >> self.oversampling)
+
+        press = (b7 * 2) // b4
+        #press = (b7 / b4) * 2
+
+        x1 = (press >> 8) * (press >> 8)
+        x1 = (x1 * 3038) >> 16
+        x2 = (-7357 * press) >> 16
+        self.press = ( press + ((x1 + x2 + 3791) >> 4) ) / 100.0
+        
+        return self.press
+
+    # calculate absolute altitude
+    def getAltitude(self) :
+        #    print ("Calculating altitude...")
+        self.altitude = 44330 * (1 - ((self.getPress() / STANDARD_PRESSURE) ** 0.1903))
+        return self.altitude
+
 
 
 try:
@@ -303,6 +427,9 @@ try:
     compass = sensors.compass
     adxl345 = sensors.accel
     gyro = sensors.gyro
+    barometer = sensors.baro
+    pitch = 0
+    roll = 0
 
     while True:
         magx = compass.getX()
@@ -314,25 +441,44 @@ try:
         gyro.getXangle()
         gyro.getYangle()
         gyro.getZangle()
+        tempC = barometer.getTempC()
+        tempF = barometer.getTempF()
+        press = barometer.getPress()
+        altitude = barometer.getAltitude()
        
-        print ("Compass: " )
-        print ("X = %d ," % ( magx )),
-        print ("Y = %d ," % ( magy )),
-        print ("Z = %d (gauss)" % ( magz ))
-        print ("ACC: ")
-        print ("x = %.3f m/s2" % ( adxl345.X ))
-        print ("y = %.3f m/s2" % ( adxl345.Y ))
-        print ("z = %.3f m/s2" % ( adxl345.Z ))
-        print ("x = %.3fG" % ( adxl345.Xg ))
-        print ("y = %.3fG" % ( adxl345.Yg ))
-        print ("z = %.3fG" % ( adxl345.Zg ))
-        print ("x = %.3f" % ( adxl345.Xraw ))
-        print ("y = %.3f" % ( adxl345.Yraw ))
-        print ("z = %.3f" % ( adxl345.Zraw ))    
-        print ("Gyro: ")
-        print ("Xangle = %.3f deg" % ( gyro.getXangle() ))
-        print ("Yangle = %.3f deg" % ( gyro.getYangle() ))
-        print ("Zangle = %.3f deg" % ( gyro.getZangle() ))
+        #print ("Compass: " )
+        #print ("X = %d ," % ( magx )),
+        #print ("Y = %d ," % ( magy )),
+        #print ("Z = %d (gauss)" % ( magz ))
+        #print ("ACC: ")
+        #print ("x = %.3f m/s2" % ( adxl345.X ))
+        #print ("y = %.3f m/s2" % ( adxl345.Y ))
+        #print ("z = %.3f m/s2" % ( adxl345.Z ))
+        #print ("x = %.3fG" % ( adxl345.Xg ))
+        #print ("y = %.3fG" % ( adxl345.Yg ))
+        #print ("z = %.3fG" % ( adxl345.Zg ))
+        #print ("x = %.3f" % ( adxl345.Xraw ))
+        #print ("y = %.3f" % ( adxl345.Yraw ))
+        #print ("z = %.3f" % ( adxl345.Zraw ))    
+        #print ("Gyro: ")
+        #print ("Xangle = %.3f deg" % ( gyro.getXangle() ))
+        #print ("Yangle = %.3f deg" % ( gyro.getYangle() ))
+        #print ("Zangle = %.3f deg" % ( gyro.getZangle() ))
+        #print ("Baro:" )
+        #print ("   Temp: %f C (%f F)" %(tempC,tempF))
+        #print ("   Press: %f (hPa)" %(press))
+        #print ("   Altitude: %f m s.l.m" %(altitude))
+        print("Accleration = %.3f" % ( numpy.sqrt(pow(adxl345.X,2)+pow(adxl345.Y,2)+pow(adxl345.Z,2)) )
+        rollacc = adxl345.Y / adxl345.Z
+        pitchacc = (-adxl345.X) / numpy.sqrt(pow(adxl345.Y,2)+pow(adxl345.Z,2))
+        #print(" Rollacc = %.3f" % (rollacc) )
+        #print(" Pitchacc = %.3f" % (pitchacc) )
+        pitch = (pitch + gyro.getXangle())*0.98 + pitchacc*0.02)
+        roll = (roll + gyro.getYangle())*0.98 + rollacc*0.02)
+        print(" Pitch = %.3f" % (pitch) )
+        print(" Roll = %.3f" % (roll) )
+        print(" Xh = %.3f" % ( magx*numpy.cos(pitch) + magz*numpy.sin(pitch) )
+        print(" Yh = %.3f" % ( magx*numpy.sin(roll)*numpy.sin(pitch) + magy*numpy.cos(roll) - magz*numpy.sin(roll)*numpy.cos(pitch)
         time.sleep(1)
 
 
